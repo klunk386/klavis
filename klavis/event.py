@@ -60,9 +60,12 @@ class MidiEvent:
         self.timestamp = timestamp
 
     def __repr__(self) -> str:
+        names = ['C', 'C#', 'D', 'D#', 'E', 'F',
+                 'F#', 'G', 'G#', 'A', 'A#', 'B']
+        note = f"{names[self.note % 12]}{(self.note // 12) - 1}"
+        ch = self.channel + 1
         return (
-            f"<MidiEvent {self.type} note={self.note} "
-            f"vel={self.velocity} ch={self.channel} "
-            f"@ {self.timestamp:.3f}>"
+            f"<MidiEvent {self.type} {note} vel={self.velocity} "
+            f"ch={ch} @ {self.timestamp:.3f}>"
         )
 

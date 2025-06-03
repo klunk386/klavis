@@ -1,4 +1,9 @@
-# Klavis
+<!-- ![klavis logo](logo/logo.png) -->
+<p align="center">
+  <img src="logo/logo.png" alt="klavis logo" width="600"/>
+</p>
+
+---
 
 **Klavis** is a modular, Python-based MIDI event server framework.
 

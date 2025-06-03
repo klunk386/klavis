@@ -56,38 +56,84 @@ class RealMidiInput(MidiInput):
     def __init__(self, port_name: str = None):
         self.midiin = rtmidi.MidiIn()
         self.port_index = self._choose_port(port_name)
-        self.midiin.ignore_types(sysex=False, timing=False, sensing=False)
+        self._safe_ignore_types(sysex=False, timing=False, sensing=False)
 
     def _choose_port(self, port_name: str) -> int:
         ports = self.midiin.get_ports()
+
         if not ports:
             raise RuntimeError("No MIDI input ports found.")
+
         if port_name is None:
+            self._print_port_list(ports)
+            print("[Klavis] No port name specified.")
+            print("[Klavis] Using default port:", ports[0])
             self.midiin.open_port(0)
-            print(f"[Klavis] Using MIDI port: {ports[0]}")
             return 0
+
+        matches = [
+            (i, name) for i, name in enumerate(ports)
+            if port_name.lower() in name.lower()
+        ]
+
+        if not matches:
+            self._print_port_list(ports)
+            raise ValueError(
+                f"No MIDI port matching '{port_name}' found."
+            )
+
+        if len(matches) > 1:
+            print("[Klavis] Multiple ports match your input:")
+            for i, name in matches:
+                print(f"  [{i}] {name}")
+            raise ValueError(
+                f"Ambiguous port name '{port_name}'. Be more specific."
+            )
+
+        index, name = matches[0]
+        self.midiin.open_port(index)
+        print(f"[Klavis] Using MIDI port: {name}")
+        return index
+
+    def _print_port_list(self, ports):
+        print("[Klavis] Available MIDI input ports:")
         for i, name in enumerate(ports):
-            if port_name.lower() in name.lower():
-                self.midiin.open_port(i)
-                print(f"[Klavis] Using MIDI port: {name}")
-                return i
-        raise ValueError(
-            f"Port matching '{port_name}' not found among: {ports}"
-        )
+            print(f"  [{i}] {name}")
+
+    def _safe_ignore_types(self, sysex=True, timing=True, sensing=True):
+        try:
+            self.midiin.ignore_types(
+                sysex=sysex, timing=timing, sensing=sensing)
+        except TypeError:
+            # Older versions of python-rtmidi do not support 'sensing'
+            self.midiin.ignore_types(sysex=sysex, timing=timing)
 
     def read(self) -> MidiEvent:
-        msg, timestamp = self.midiin.get_message()
-        while msg is None:
+        while True:
+            result = self.midiin.get_message()
+            if result is not None:
+                msg, timestamp = result
+                return self._parse_message(msg, timestamp)
             time.sleep(0.01)
-            msg, timestamp = self.midiin.get_message()
-        return self._parse_message(msg, timestamp)
 
     def _parse_message(self, msg: list, timestamp: float) -> MidiEvent:
+        if not msg:
+            return None
+
         status = msg[0] & 0xF0
         channel = msg[0] & 0x0F
-        if status == 0x90 and msg[2] > 0:
+
+        if status == 0x90 and len(msg) >= 3 and msg[2] > 0:
             return MidiEvent("note_on", msg[1], msg[2], channel, time.time())
-        elif status == 0x80 or (status == 0x90 and msg[2] == 0):
+        elif status == 0x80 and len(msg) >= 3:
             return MidiEvent("note_off", msg[1], msg[2], channel, time.time())
-        return MidiEvent("unknown", msg[1], msg[2], channel, time.time())
+        elif status == 0x90 and len(msg) >= 3 and msg[2] == 0:
+            return MidiEvent("note_off", msg[1], msg[2], channel, time.time())
+
+        # Fallback for unknown/short messages
+        note = msg[1] if len(msg) > 1 else 0
+        velocity = msg[2] if len(msg) > 2 else 0
+
+        return MidiEvent("unknown", note, velocity, channel, time.time())
+
 
